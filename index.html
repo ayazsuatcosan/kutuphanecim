@@ -502,6 +502,24 @@ select option { background: var(--bg3); }
 <div class="modal-bg" id="modal-add" style="display:none" onclick="if(event.target===this)closeModal('modal-add')">
   <div class="modal">
     <h2 id="modal-title">Kitap Ekle</h2>
+    <div style="display:flex;gap:0;margin-bottom:16px;border:1px solid var(--brd2);border-radius:8px;overflow:hidden">
+      <button class="modal-tab act" id="tab-ara-btn" onclick="switchModalTab('ara')" style="flex:1;padding:9px;background:var(--gold);color:#0a0907;border:none;cursor:pointer;font-size:12px;font-weight:600">🔍 Kitap Ara</button>
+      <button class="modal-tab" id="tab-manuel-btn" onclick="switchModalTab('manuel')" style="flex:1;padding:9px;background:var(--bg3);color:var(--txt3);border:none;cursor:pointer;font-size:12px">✏️ Manuel Ekle</button>
+    </div>
+
+    <!-- ARAMA SEKMESİ -->
+    <div id="modal-ara">
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <input id="gbooks-query" type="text" placeholder="Kitap adı veya yazar yaz..." style="flex:1" onkeydown="if(event.key==='Enter')searchGBooks()">
+        <button class="btn primary" onclick="searchGBooks()">Ara</button>
+      </div>
+      <div id="gbooks-results" style="max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:8px">
+        <div style="text-align:center;color:var(--txt4);font-size:12px;padding:20px">Aramak istediğin kitabı yaz</div>
+      </div>
+    </div>
+
+    <!-- MANUEL SEKMESİ -->
+    <div id="modal-manuel" style="display:none">
     <div class="form-row"><label>Kitap Adı *</label><input id="f-kitap" type="text"></div>
     <div class="form-row"><label>Yazar *</label><input id="f-yazar" type="text"></div>
     <div class="form-grid">
@@ -542,6 +560,7 @@ select option { background: var(--bg3); }
       <button class="btn" onclick="closeModal('modal-add')">İptal</button>
       <button class="btn primary" onclick="saveBook()">Kaydet</button>
     </div>
+    </div><!-- /modal-manuel -->
   </div>
 </div>
 
@@ -675,6 +694,80 @@ let currentSort = {k:'kitap', d:'asc'};
 let editingId = null;
 let detailId = null;
 
+
+
+// ── GOOGLE BOOKS ARAMA ────────────────────────────────────────────────────────
+function switchModalTab(tab) {
+  document.getElementById('modal-ara').style.display = tab === 'ara' ? 'block' : 'none';
+  document.getElementById('modal-manuel').style.display = tab === 'manuel' ? 'block' : 'none';
+  document.getElementById('tab-ara-btn').style.background = tab === 'ara' ? 'var(--gold)' : 'var(--bg3)';
+  document.getElementById('tab-ara-btn').style.color = tab === 'ara' ? '#0a0907' : 'var(--txt3)';
+  document.getElementById('tab-manuel-btn').style.background = tab === 'manuel' ? 'var(--gold)' : 'var(--bg3)';
+  document.getElementById('tab-manuel-btn').style.color = tab === 'manuel' ? '#0a0907' : 'var(--txt3)';
+}
+
+async function searchGBooks() {
+  const q = document.getElementById('gbooks-query').value.trim();
+  if (!q) return;
+  const el = document.getElementById('gbooks-results');
+  el.innerHTML = '<div style="text-align:center;color:var(--txt4);font-size:12px;padding:20px">Aranıyor...</div>';
+  try {
+    const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=10`;
+    const res = await fetch(url);
+    const data = await res.json();
+    const items = data.items || [];
+    if (!items.length) { el.innerHTML = '<div style="text-align:center;color:var(--txt4);font-size:12px;padding:20px">Sonuç bulunamadı</div>'; return; }
+    el.innerHTML = items.map((item, i) => {
+      const v = item.volumeInfo || {};
+      const title = v.title || '';
+      const author = (v.authors || []).join(', ') || 'Bilinmiyor';
+      const cover = (v.imageLinks?.thumbnail || v.imageLinks?.smallThumbnail || '').replace('http://','https://');
+      const pages = v.pageCount || 0;
+      const year = v.publishedDate ? v.publishedDate.slice(0,4) : '';
+      const publisher = v.publisher || '';
+      return `<div onclick="selectGBook(${i})" data-idx="${i}" style="display:flex;gap:10px;padding:10px;background:var(--bg3);border:1px solid var(--brd);border-radius:8px;cursor:pointer;transition:border .15s" onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor='var(--brd)'">
+        <div style="width:40px;height:56px;background:var(--bg4);border-radius:3px;flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--gold)">
+          ${cover ? `<img src="${cover}" style="width:100%;height:100%;object-fit:cover">` : '📖'}
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="font-family:var(--ffh);font-style:italic;font-size:13px;color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${title}</div>
+          <div style="font-size:11px;color:var(--gold);margin-top:2px">${author}</div>
+          <div style="font-size:10px;color:var(--txt4);margin-top:2px">${[publisher, year, pages ? pages+' sayfa' : ''].filter(Boolean).join(' · ')}</div>
+        </div>
+      </div>`;
+    }).join('');
+    // Veriyi sakla
+    window._gbooksData = items;
+  } catch(e) {
+    el.innerHTML = '<div style="text-align:center;color:var(--red);font-size:12px;padding:20px">Bağlantı hatası</div>';
+  }
+}
+
+function selectGBook(i) {
+  const item = window._gbooksData[i];
+  if (!item) return;
+  const v = item.volumeInfo || {};
+  const author = (v.authors || []).join(', ') || '';
+  const cover = (v.imageLinks?.thumbnail || v.imageLinks?.smallThumbnail || '').replace('http://','https://');
+  const year = v.publishedDate ? parseInt(v.publishedDate.slice(0,4)) : 0;
+
+  // Manuel sekmeye geç ve doldur
+  switchModalTab('manuel');
+  document.getElementById('f-kitap').value = v.title || '';
+  document.getElementById('f-yazar').value = author;
+  document.getElementById('f-yayinevi').value = v.publisher || '';
+  document.getElementById('f-sayfa').value = v.pageCount || '';
+  document.getElementById('f-yil').value = year || '';
+
+  // Dil tahmini
+  const langMap = {tr:'Türkçe', en:'İngilizce', de:'Almanca', fr:'Fransızca'};
+  document.getElementById('f-dil').value = langMap[v.language] || 'Türkçe';
+
+  // Kapak URL'ini sakla (kaydet fonksiyonu kullanacak)
+  window._selectedCover = cover;
+
+  toast('Bilgiler dolduruldu, kontrol edip kaydet');
+}
 
 // ── TOAST ─────────────────────────────────────────────────────────────────────
 let toastTimer;
@@ -969,8 +1062,12 @@ function openAdd() {
   document.getElementById('f-tur').value = 'Tarih';
   document.getElementById('f-donem').value = 'Osmanlı (Genel)';
   document.getElementById('f-status').value = 'okunacak';
+  switchModalTab('ara');
+  document.getElementById('gbooks-query').value = '';
+  document.getElementById('gbooks-results').innerHTML = '<div style="text-align:center;color:var(--txt4);font-size:12px;padding:20px">Aramak istediğin kitabı yaz</div>';
+  window._selectedCover = '';
   document.getElementById('modal-add').style.display = 'flex';
-  setTimeout(() => document.getElementById('f-kitap').focus(), 100);
+  setTimeout(() => document.getElementById('gbooks-query').focus(), 100);
 }
 
 function openEdit(id) {
@@ -1008,7 +1105,7 @@ function saveBook() {
     tur: document.getElementById('f-tur').value,
     donem: document.getElementById('f-donem').value,
     status: document.getElementById('f-status').value,
-    cover: ''
+    cover: window._selectedCover || ''
   };
 
   if (editingId) {
@@ -1022,6 +1119,7 @@ function saveBook() {
   }
 
   save(BOOKS);
+  window._selectedCover = '';
   closeModal('modal-add');
   renderLib();
   renderBadges();
